@@ -1,0 +1,824 @@
+---
+title: "7.new.Russ_1618"
+author: "Danny"
+date: "10/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(foreign)
+library(haven)
+library(tidyverse)
+library(summarytools)
+library(readxl)
+options(scipen = 999)
+```
+
+
+# set up data
+```{r import, message=FALSE, warning=FALSE, include=FALSE}
+
+
+### To get earned_units in carnegie (divide by 6)
+
+sheetnum <- (1:6)
+cc1618 <- lapply(sheetnum, function(x)read_excel("C:/Users/katzd/Downloads/7.new.GFSF_16_18.xlsx", sheet = x))
+
+lapply(cc1618, names)
+
+
+cc1618_courses <- cc1618[[3]]
+
+
+cc1618_attend <- cc1618[[2]]
+View(cc1618_attend)
+
+cc1618_grade <- cc1618[[1]]
+cc1618_grade <- cc1618_grade[-1, ]
+
+ccenroll <- cc1618[[6]]
+cccourse <- cc1618[[5]]
+n_distinct(cccourse$SSID)
+
+
+ccvals <- cc1618_grade %>% filter(SSID == "2162556372") %>%
+  dplyr::select(SSID, InterSegmentKey) %>%
+  left_join(., cccourse, by = "SSID")
+
+ccvals2 <- cc1618_grade %>% filter(SSID == "6138453284") %>%
+  dplyr::select(SSID, InterSegmentKey) %>%
+  left_join(., cccourse, by = "InterSegmentKey")
+
+
+n_distinct(cc1618_grade$SSID)
+
+not910 <- cc1618_grade %>%
+  filter(GradeCode != "09" & GradeCode != "10")
+n_distinct(not910$SSID)
+
+just9 <- cc1618_grade %>%
+  filter(GradeCode=="09")
+
+n_distinct(just9$SSID)
+
+just10 <- cc1618_grade %>%
+  filter(GradeCode=="10")
+
+
+n_distinct(just10$SSID)
+
+
+in9ththnot10th <- anti_join(just9, just10, by = "SSID")
+
+n_distinct(in9ththnot10th$SSID)
+
+
+cdss <- c("1975713",
+"2365540",
+"5575184",
+"4770250",
+"3667710",
+"3467355",
+"2465755",
+"5872736",
+"1673932",
+"4670177",
+"1162653",
+"1965052",
+"5376513",
+"5772694")
+
+cc1618_grade <- cc1618_grade %>% mutate(subcds = substr(CDS, 1, 7)) %>%
+  mutate(eval_school = if_else(subcds %in% cdss, 1, 0))
+
+justeval_sum <- cc1618_grade %>%
+  filter(YearCode=="2017-2018", GradeCode=="10") %>%
+  group_by(subcds) %>%
+  summarise(eval_tot=n_distinct(SSID)) %>%
+  filter(subcds %in% cdss)
+
+write.csv(justeval_sum, "studentspercds.csv")
+
+
+
+paste("there are", n_distinct(cc1618_grade$SSID), "unique total students (cases)", sep = " ")
+
+
+# have to get the right cohort and add a group number by SSID, YearCode, GradeCode. 
+cc1618_g910 <- cc1618_grade %>%  
+  filter(YearCode=="2016-2017" & GradeCode=="09"| YearCode=="2017-2018" & GradeCode=="10"  ) %>%
+  group_by(SSID, YearCode, GradeCode) %>%
+  mutate(dup_SSID = n_distinct(CDS)) %>%
+  mutate(group_id = row_number() ) %>%
+  ungroup() %>%
+  group_by(SSID) %>%
+  mutate(total_school = n_distinct(CDS))
+
+
+
+##cc1618_g10 <- cc1618_g910 %>%  
+ # filter(YearCode=="2017-2018" & GradeCode=="10") %>%
+ # group_by(SSID) %>%
+ # mutate(dup_SSID = n_distinct(CDS)) %>%
+ # mutate(group_id = row_number() )
+#
+
+
+cc1618_g910_d <- cc1618_g910 %>%
+  filter(group_id==1) %>%
+  mutate(multiple_cds = ifelse(dup_SSID>1, 1, 0))
+
+cc1618_g910_duplicate <- cc1618_grade %>%
+filter(YearCode=="2016-2017" & GradeCode=="09"| YearCode=="2017-2018" & GradeCode=="10"  ) %>%
+  group_by(SSID, YearCode, CDS, GradeCode) %>%
+  mutate(group_id = row_number() )
+
+
+View(cc1618_g910_duplicate)
+
+dup_flag <- cc1618_g10 %>%
+  group_by(SSID) %>%
+  pivot_wider(id_cols = SSID, values_from = cds, names_from = group_id, names_prefix = "cds") %>% left_join(., cc1618_g10_distinct2, by = "SSID") %>%
+  select(inter_segment_key, SSID, cds1:cds4, Gender, IsHispanicEthnicity, Race01, Race02, multiple_cds)
+
+```
+
+## tracking down duplicates
+```{r}
+
+dup_flag <- cc1618_g10 %>%
+  select(inter_segment_key, SSID, cds, dup_SSID, dup_SSID_cds, flag_mult_cds) %>%
+  ungroup() %>%
+  pivot_wider(id_cols = SSID, names_from = dup_SSID, values_from = cds)
+ 
+
+
+
+dups <- cc1618_g10 %>% 
+  mutate(inter_segment_key2 = ifelse(inter_segment_key=="NULL", NA, inter_segment_key)) %>%
+  group_by(SSID) %>%
+ fill(inter_segment_key2) %>%
+  select(inter_segment_key, SSID, )
+  ungroup() %>%
+  pivot_wider(id_cols=SSID, names_from = dup_SSID, values_from = cds)
+  
+glimpse(dups)
+
+paste("there are", n_distinct(cc1618_g10$SSID), "unique 10th grade students (cases)", sep = " ")
+
+dim(cc1618_grade)
+
+sum(duplicated(cc1618_grade$SSID))
+sum(duplicated(cc1618_g10$SSID))
+
+cc1618_g10NULL <- cc1618_g10 %>% filter(inter_segment_key=="NULL")
+n_distinct(cc1618_g10NULL$SSID)
+
+
+```
+## Try to figure out duplicates
+```{r duplicates}
+
+cc1618dup10 <- cc1618_g10 %>% 
+  group_by(SSID) %>% 
+  filter(n() > 1) %>%
+  summarise(n=n())
+```
+
+# Creates a dataset with just gfsf schools
+```{r}
+gfsf1618_dup2 <- filter(cc1618gfsfgrade_dup, subcds %in% cdss)
+as.data.frame(table(gfsf1618_dup2$subcds))$Var1 %in% cdss
+```
+
+```{r}
+
+table(gfsf1618_dup$subcds)
+n_distinct(gfsf1618_dup)
+
+dupgfsf <- left_join(gfsf1618_dup, cc1618dup10, by = "SSID")
+
+table(dupgfsf$subcds)
+```
+## Get the full 10th grade dataset 
+```{r attendance, include=FALSE}
+library(tidyverse)
+
+# Get High School attend Data ###
+
+cc1618_attend_agg <- cc1618_attend %>%
+  filter(SSID != "(15007 rows affected)") %>%
+  group_by(SSID, YearCode) %>%
+  summarize(tot_attend = sum(AttendedDays),
+            tot_expect_attend = sum(ExpectedAttendanceDays),
+            attendrate = tot_attend/tot_expect_attend,
+            suspendtot = sum(SuspendedDays),
+            suspend_rate = sum(SuspendedDays)/sum(tot_expect_attend),
+            chron_abs = if_else(attendrate <= .9, 1, 0))
+
+GFSFschools <- read_excel("C:/Users/katzd/Desktop/Rprojects/GFSF/GFSFschools.xlsx")
+GFSFschools <- GFSFschools[-c(11, 22), ] %>%
+  select(CDS:FFF)
+names(GFSFschools)
+GFSFschools2 <- read_sav("C:/Users/katzd/Downloads/Evaluation schools 1516 data (J=20).sav") %>%
+  mutate(cds = as.character(cds))
+
+names(GFSFschools2)[1:4] <- c("CDS",                         "High School",                 "District",                   "FFF")
+
+GFSFschools2 <- GFSFschools2 %>% 
+  select(CDS:FFF)
+
+# get just first CDS from attend
+
+CDS_attend <- cc1618_attend %>%
+  filter(YearCode=="2016-2017") %>% 
+  full_join(., GFSFschools2, by = "CDS") %>%
+  mutate(GFSF_FFF_attend = case_when(
+  FFF==0 ~"0",
+  FFF==1 ~ "1")) %>%
+  group_by(SSID) %>%
+  mutate(FFF_any = if_else(any(GFSF_FFF_attend==1)|any(GFSF_FFF_attend==2), 1, 0)) %>%
+  filter(FFF_any == 1 & GFSF_FFF_attend == 1 | FFF_any == 0 & GFSF_FFF_attend ==0|is.na(FFF_any)&is.na(GFSF_FFF_attend)) %>%
+  mutate(id = row_number()) %>%
+  filter(id==1) %>%
+  ungroup() %>%
+  select(SSID, CDS, FFF) %>%
+  rename("attend_CDS" = CDS, "attend_FFF"=FFF)
+
+n_distinct(cc1618_attend$SSID)
+n_distinct(CDS_attend$SSID)
+
+CDS_attend[CDS_attend$SSID %in% cc1618_attend$SSID==F,  ]
+
+summary(cc1618_attend_agg[cc1618_attend_agg$YearCode=="2017-2018", ])
+
+```
+```{r}
+# Get enrollment GFSF
+
+CDS_enroll <- cc1618_grade %>%  
+  filter(YearCode=="2016-2017" & GradeCode=="09") %>%
+  full_join(., GFSFschools2, by = "CDS") %>%
+  mutate(GFSF_FFF_enroll = case_when(
+  FFF==0 ~"0",
+  FFF==1 ~ "1")) %>%
+  group_by(SSID) %>%
+  mutate(FFF_any = if_else(any(GFSF_FFF_enroll==1), 1, 0)) %>%
+  filter(FFF_any == 1 & GFSF_FFF_enroll == 1 | FFF_any == 0 & GFSF_FFF_enroll ==0|is.na(FFF_any)&is.na(GFSF_FFF_enroll)) %>%
+  mutate(id = row_number()) %>%
+  filter(id==1) %>%
+  ungroup() %>%
+  select(SSID, CDS, FFF) %>%
+  rename("enroll_CDS" = CDS, "enroll_FFF"=FFF)
+
+
+
+  
+n_distinct(cc1618_grade$SSID)
+n_distinct(CDS_enroll$SSID)
+
+CDS_enroll[CDS_enroll$SSID %in% cc1618_grade$SSID==F,  ]
+
+exp()
+
+```
+
+# this also has suspension
+#hs_attend910 <- left_join(cc1618_g910_d, cc1618_attend, by = c("SSID", "YearCode", "CDS"))
+
+```{r}
+filedat_units <- cc1618_courses %>%
+  mutate(GPA_points1 = recode(Grade, 
+     "A"  =   "4"  ,
+     "A+" =   "4"  ,
+     "A-" =   "4"  ,
+     "A_" =   "4"  ,
+     "B"  =   "3"  ,
+     "B+" =   "3"  ,
+     "B-" =   "3"  ,
+     "C+" =   "2"  ,
+     "C"  =   "2"  ,
+     "C-" =   "2"  , 
+     "D+" =   "1"  ,
+     "D"  =   "1"  ,
+     "D-" =   "1"  ,
+     "F"  =   "0"  ),
+     
+#if_else(CreditAttempted==5|CreditAttempted==10|CreditAttempted==2.5, CreditEarned/10, CreditEarned),
+     UnitsAttempted = case_when(CreditAttempted >= 1 & CourseTerm != "FY"| 
+                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditAttempted/10),
+UnitsEarned = case_when(CreditAttempted >= 1 & CourseTerm != "FY"| 
+                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditEarned/10),
+#if_else(CreditAttempted==5|CreditAttempted==10|CreditAttempted==2.5, CreditAttempted/10, CreditAttempted),
+     GPA_points1 = as.numeric(GPA_points1),
+     GPA_points1 = replace_na(GPA_points1, 0),
+     GPA_points = ifelse(CreditEarned/CreditAttempted==.5 & Grade=="F", .5, GPA_points1),
+         #`GPA_points_fy*` = if_else(course_term == "FY", as.numeric(GPA_points)*2, `GPA_points*`,
+         `fail*`=ifelse(Grade=="F" & CourseTerm =="FY" & CreditEarned==0, 2,
+                        if_else(Grade == "F" & CourseTerm =="FY" & CreditEarned/CreditAttempted == .5, 1, 
+                                ifelse( CourseTerm !="FY"& Grade=="F", 1, 0))),
+         #`carnegie_earn*` = CreditEarned/5,
+         #`carnegie_attemp*` = CreditAttempted/5,
+         `ag*` = if_else(!is.na(AGstatus) & GPA_points >= 2, 1, 
+                                          0),
+GFSF_cred = case_when(
+     str_detect(CourseTitle, "^GFSF")|
+     str_detect(CourseTitle, "Life Skills")|
+     str_detect(CourseTitle, "Office Practices")|
+     str_detect(CourseTitle, "College and Career Ready")|
+     str_detect(CourseTitle, "Future Focus")|
+     str_detect(CourseTitle, "Seminar")| 
+     str_detect(CourseTitle, "College Prep")|
+     str_detect(CourseTitle, "Success 101")|
+     str_detect(CourseTitle, "College & Car")|
+     str_detect(CourseTitle, "College and Career Readiness")|
+     str_detect(CourseTitle, "^BldgFnd") ~T),
+AVID_cred = case_when(str_detect(CourseTitle, "^Avid")|
+                      str_detect(CourseTitle,"^AVID")~T),
+GFSF_UNIT_earn = case_when(GFSF_cred==T~UnitsEarned),
+GFSF_UNIT_attempt = case_when(GFSF_cred==T~UnitsAttempted),
+AVID_UNIT_earn = case_when(str_detect(CourseTitle, "^Avid")|
+                           str_detect(CourseTitle,"^AVID")~UnitsEarned),
+AVID_UNIT_attempt=case_when(str_detect(CourseTitle,"^Avid")|
+                            str_detect(CourseTitle,"^AVID") ~UnitsAttempted)) %>% 
+  group_by(SSID) %>%
+  mutate(tot_distinct_schools=n_distinct(SSID))
+
+indicat_SSID <- cc1618_courses %>%
+  #filter(YearCode=="2016-2017") %>%
+  distinct(., SSID, CDS, YearCode) %>%
+  select(SSID, CDS, YearCode) %>%
+  group_by(YearCode, SSID) %>%
+  mutate(group_id = paste0("school_", row_number())) %>%
+  ungroup() %>%
+  pivot_wider(values_from = CDS, names_from = group_id)
+
+write_sav(indicat_SSID, "just_school.sav")
+
+
+  
+
+
+
+###get credit earned basically this puts together the whole file.
+indicators<- filedat_units %>%
+  group_by(SSID, YearCode) %>% 
+  summarize(
+            GFSF_courses_taken = sum(GFSF_cred, na.rm = T),
+            AVID_course_taken = sum(AVID_cred, na.rm = T),
+    #`credearnraw*` = sum(CreditEarned),
+            `cred_earn_carn*` = sum(UnitsEarned),
+            `credit_attempt_carn*` = sum(UnitsAttempted),
+            `ag_cred_earn_carn*` = sum(`ag*`*UnitsEarned),
+            `ag_courses*` = sum(`ag_cred_earn_carn*`, na.rm = T),
+            #`ag_cred_carn_earn*` = sum(`ag_cred_earn*`/5),
+            `totfail*` = sum(`fail*`),
+            `GPA*` = sum(GPA_points * UnitsEarned, na.rm=T)/sum(UnitsAttempted, na.rm = T), 
+            `aggpa**` = sum(GPA_points * UnitsEarned * `ag*`)/(sum(UnitsAttempted*`ag*`)),
+            GFSF_units_attempt = sum(GFSF_UNIT_attempt, na.rm=T),
+            GFSF_Units_earn = sum(GFSF_UNIT_earn, na.rm=T),
+            AVID_units_attempt = sum(AVID_UNIT_attempt, na.rm=T),
+            AVID_Units_earn = sum(AVID_UNIT_earn, na.rm=T),
+            GFSF_GPA = sum(GPA_points*GFSF_UNIT_earn,  na.rm=T)/sum(GFSF_UNIT_attempt, na.rm=T),
+            AVID_GPA = sum(GPA_points*AVID_UNIT_earn,  na.rm=T)/sum(AVID_UNIT_attempt,  na.rm=T)) %>%
+  mutate(`aggpa*`=if_else(is.nan(`aggpa**`), 0, `aggpa**`)) %>%
+  ungroup() %>%
+  group_by(SSID) %>%
+  mutate(total_ag_cred_earn_carn =sum(`ag_cred_earn_carn*`, na.rm=T),
+         total_ag_course = sum(`ag_courses*`, na.rm = T))
+
+indicators_two <- filedat_units %>%
+  group_by(SSID) %>%
+  summarize(`total_GPA*` = sum(GPA_points * UnitsEarned/sum(UnitsAttempted, na.rm = T), na.rm=T),
+            `total_ag_gpa**` = sum(GPA_points * UnitsEarned * `ag*`)/(sum(UnitsAttempted*`ag*`))) %>%
+  mutate(`total_ag_gpa*`=if_else(is.nan(`total_ag_gpa**`), 0, `total_ag_gpa**`)) %>%
+  select(SSID, `total_GPA*`, `total_ag_gpa*`)
+
+
+indicators <- left_join(indicators, indicators_two, by="SSID")
+         
+  #ungroup() %>%
+
+
+#GFSFschools <- bind_rows(GFSFschools, GFSFschools2)
+
+
+CDS_courses<- cc1618_courses %>%
+  filter(YearCode=="2016-2017") %>%
+  full_join(., GFSFschools2, by = "CDS") %>%
+  mutate(GFSF_FFF_courses = case_when(
+    FFF==0 ~"0",
+    FFF==1 ~ "1"  )) %>%
+  group_by(SSID) %>%
+  mutate(FFF_any = if_else(any(GFSF_FFF_courses==1), 1, 0)) %>%
+  filter(FFF_any == 1 & GFSF_FFF_courses == 1 | FFF_any == 0 & GFSF_FFF_courses ==0|is.na(FFF_any)&is.na(GFSF_FFF_courses)) %>%
+  mutate(id = row_number()) %>%
+  filter(id==1) %>%
+  ungroup() %>%
+  select(SSID, CDS, FFF) %>%
+  rename("courses_CDS" = CDS, "courses_FFF"=FFF)
+  
+##n_distinct(cc1618_courses$SSID)
+#
+#n_distinct(CDS_courses$SSID)
+#n_distinct(CDS_courses2$SSID)
+#
+#
+#CDS_courses[CDS_courses$SSID %in% cc1618_courses$SSID ==F, ]
+```
+
+
+```{r}
+indicators2 <- left_join(cc1618_g910_d, indicators, by=c("SSID", "YearCode")) %>%
+  group_by(SSID) %>%
+  left_join(., cc1618_attend_agg, by = c("SSID", "YearCode")) %>%
+  group_by(SSID, YearCode) %>%
+           mutate( `ontrack1*` = ifelse(`totfail*` <= 1 & `cred_earn_carn*` >=5, 1, 0),
+         `ontrack2*` = if_else(sum(attendrate) >= .95 & sum(suspendtot) ==0 & `totfail*` ==0, 1,0)) %>%
+  ungroup() %>%
+  group_by(SSID) %>%
+  mutate(`total_ontrack1*` = ifelse(`totfail*` <= 2 & `cred_earn_carn*` >=10, 1, 0),
+         `total_ontrack2*` = if_else(sum(attendrate/n()) >= .95 & sum(suspendtot) ==0 & `totfail*` ==0, 1, 0)) %>%
+  ungroup() %>%
+  group_by(SSID, YearCode) %>%
+  mutate(gradeenroll = if_else(GradeCode=="09"|GradeCode=="10", 1, 0)) %>%
+  ungroup() %>%
+  group_by(SSID) %>%
+  mutate(grade_both = sum(gradeenroll),
+         only_1_grade = if_else(grade_both < 2, 1, 0)) %>%
+  dplyr::select(-gradeenroll, -grade_both) %>%
+  left_join(., CDS_attend, by=c("SSID")) %>%
+  left_join(., CDS_courses, by = "SSID") %>%
+  left_join(., CDS_enroll, by ="SSID") %>%
+  #left_join(., indicat_SSID, by=c("SSID")) %>%
+  mutate(treat = if_else(courses_FFF==1|enroll_FFF==1|attend_FFF==1, 1, 0))
+
+names(indicators2)
+
+indicators3 <- indicators2 %>%
+  select(-group_id, -eval_school) %>%
+  select(SSID, courses_CDS, enroll_CDS, attend_CDS, CDS, treat, InterSegmentKey:treat ) %>%
+  rename("CDS_courses" = courses_CDS,
+         "CDS_enroll" = enroll_CDS, 
+         "CDS_attend" = attend_CDS,
+         "num_schools_year" = dup_SSID,
+         "fail" = `totfail*`,
+         "attend_during_year" = tot_attend,
+         "expect_attend_during_year"=tot_expect_attend,
+         "suspend_year" = suspendtot) %>%
+  group_by(SSID) %>%
+  mutate(total_fail=sum(fail)) %>%
+  select(-CDS)
+
+names(indicators3) <- make.names(names(indicators3))
+
+
+write.csv(indicators3, "student_level_variables_gfsf15.csv")
+write_sav(indicators3, "student_level_variables_gfsf15.sav")
+
+
+fails <- indicators3 %>%
+  group_by(SSID) %>%
+  summarise(total_fail=sum(fail, na.rm=T))
+
+hist(fails$total_fail)
+
+  
+
+summary(indicators[indicators$YearCode=="2017-2018", ])
+
+
+indicator_agg <- indicators %>% group_by(SSID) %>%
+  summarize(`ag_cred_earn_carn_agg*` = sum(`ag_cred_earn_carn*`))
+summary(indicator_agg)
+
+
+summary(indicators)
+write.csv(indicators2, "student_level_variables_gfsf6.csv")
+write_sav(indicators2, "student_level_variables_gfsf6.sav")
+
+write.csv(filedat_units, "constructed_case_level_gfsf5.csv")
+write_sav(filedat_units, "constructed_case_level_gfsf5.sav")
+
+# add total ag_course over two years
+# add total failures over years 
+# total = two years
+
+
+fails %>%
+  ggplot(., aes(x=total_fail)) + 
+  geom_histogram(stat = "count")
+
+total_gfsf <- indicators3 %>%
+  filter(YearCode=="2016-2017") %>%
+  group_by(CDS_courses) %>%
+  summarise(total_GFSF = sum(GFSF_courses_taken))
+```
+
+```{r}
+
+#create GPA points
+cc1618full <- cccourse %>% mutate(cc_gpaval = case_when(Grade=="A"  ~  4, 
+                                                       Grade== "A-" ~  4, 
+                                                       Grade== "A+" ~  4, 
+                                                       Grade== "B"  ~  3, 
+                                                       Grade== "B-" ~  3, 
+                                                       Grade== "B+" ~  3, 
+                                                       Grade== "C+" ~  2, 
+                                                       Grade== "C"  ~  2, 
+                                                       Grade== "C-" ~  2, 
+                                                       Grade== "D+" ~  1, 
+                                                       Grade== "D"  ~  1, 
+                                                       Grade== "D-" ~  1, 
+                                                       Grade== "F"  ~  0)) %>%
+  mutate(tflag_attempt  = ifelse(CreditFlag=="T" & UnitsAttempted > 0, 1, ifelse(CreditFlag=="T" & UnitsAttempted >= 88, NA, 0))) %>%
+         mutate(tflag_earn  = if_else(CreditFlag=="T" &  UnitsEarned < 88 & UnitsEarned >0, 1, 0)) %>%
+  mutate(t_units_attempt = tflag_attempt*UnitsAttempted,
+         t_units_earned = tflag_earn*UnitsEarned,
+         UCflag  = ifelse(TransferStatus=="A" & UnitsEarned <= UnitsAttempted, 1, 0),
+         CSUflag  = ifelse(UCflag==1 | TransferStatus == "B"  & UnitsEarned <= UnitsAttempted, 1, 0),
+         UCunits = UCflag * UnitsEarned, 
+         CSUunits = CSUflag * UnitsEarned,
+         fail = ifelse(Grade=="F", 1, 0),
+         cflag  = ifelse(TopCode=="493012" & UnitsEarned <= UnitsAttempted, 1, 0),
+         topflag  = ifelse(TopCode=="493013" & UnitsEarned <= UnitsAttempted| TopCode == "499900" & UnitsEarned <= UnitsAttempted, 1, 0),
+         cflag_earn = cflag*UnitsEarned,
+         topflag = topflag*UnitsEarned,
+         sub_year = substr(TermId, 1, 2),
+         Year_Code = if_else(TermId=="167"|TermId=="165"|TermId=="168"|TermId=="171"|TermId=="172"|TermId=="173"| TermId=="174", "2016-2017",
+  ifelse(TermId=="175"|TermId=="177"|TermId=="178"|sub_year=="18", "2017-2018", "2015-2016")))
+
+
+
+
+cc_var_2 <- cc1718full %>%
+  group_by(SSID, Year_Code) %>%
+  summarise(num_trans_attempt = sum(tflag_attempt, na.rm = T),
+            num_trans_earn = sum(tflag_earn, na.rm = T),
+            attemp_trans_units = sum(t_units_attempt, na.rm=T),
+            earn_trans_units = sum(t_units_earned, na.rm = T),
+            num_UC_attempt = sum(UCflag, na.rm=T),
+            num_CSU_attempt =  sum(CSUflag, na.rm=T),
+            sum_UC_earn_units = sum(UCunits, na.rm = T),
+            sum_CSU_earn_units = sum(CSUunits, na.rm = T),
+            earned_career_493012 = sum(cflag_earn, na.rm = T),
+            earned_493013_499900 = sum(topflag, na.rm = T),
+            tot_fails = sum(fail, na.rm = T),
+            GPA = sum(cc_gpaval * t_units_earned, na.rm = T)/sum(t_units_attempt, na.rm=T)) %>%
+  filter(SSID != "(1806 rows affected)")
+  
+
+cc_var_notyear <- cc1718full %>%
+  group_by(SSID) %>%
+  summarise(num_trans_attempt = sum(tflag_attempt, na.rm = T),
+            num_trans_earn = sum(tflag_earn, na.rm = T),
+            attemp_trans_units = sum(t_units_attempt, na.rm=T),
+            earn_trans_units = sum(t_units_earned, na.rm = T),
+            num_UC_attempt = sum(UCflag, na.rm=T),
+            num_CSU_attempt =  sum(CSUflag, na.rm=T),
+            sum_UC_earn = sum(UCunits, na.rm = T),
+            sum_CSU_earn = sum(CSUunits, na.rm = T),
+            earned_career_493012 = sum(cflag_earn, na.rm = T),
+            earned_493013_499900 = sum(topflag, na.rm = T),
+            tot_fails = sum(fail, na.rm = T)
+            )
+
+cc_var_1617 <- cc_var_2 %>%
+  filter(Year_Code=="2016-2017")
+
+write.csv(cc_var_2, "ccvars16_18_byyear.csv")
+
+n_distinct(cc_var_2$SSID)
+
+summary(cc_var_2[cc_var_2$Year_Code=="2017-2018",] )
+View(cc_var_notyear)
+
+no_match <- anti_join(indicators2, cc_var_2)
+
+paste("there are", n_distinct(cc1718full$InterSegmentKey), "unique students (cases)", sep = " ")
+
+cc1618full %>% group_by(Year_Code) %>%
+  summarise(n=n(),
+            total_d = n_distinct(SSID))
+
+cc1618full %>%
+  summarise(n=n(),
+            ndist=n_distinct(SSID))
+```
+
+
+
+## Get transfer data
+```{r transferstat}
+
+
+
+#aggregate transfer
+# get number of students with units earned
+numearn <- cc1718full %>% 
+  mutate(tflag  = ifelse(CreditFlag=="T" & UnitsAttempted >= .5, 1, 0)) %>% select(inter_segment_key, CreditFlag, tflag, UnitsAttempted, UnitsEarned) %>% filter(UnitsEarned < 88 & UnitsEarned > 0) %>% group_by(inter_segment_key) %>% summarise(sum(tflag))
+
+names(tUnitsearned)[2] <- "tUnitsEarned"
+
+summary(course_student$`sum(UnitsAttempted * tflag)`)
+summary(tUnitsearned$`sum(UnitsEarned * 1)`)
+
+
+table(duplicated(course_student$inter_segment_key))
+
+
+
+#courses1617 %>% mutate(tflag  = ifelse(CreditFlag=="T", 1, 0))%>%group_by(derkey1) %>% #summarise(sum(UnitsAttempted)) %>% nrow()
+
+#aggregate transfer type
+#courses1617 %>% group_by(TransferStatus) %>% summarise(sum(UnitsAttempted))
+#sum(duplicated(courses1617$derkey1))
+#bystudent
+#studentdat1 <- courses1617 %>% filter(CreditFlag=="T" & UnitsAttempted >= 1) %>% #group_by(derkey1) %>% summarise(sum(UnitsAttempted))
+
+#studentdat <- courses1617 %>% group_by(derkey1) %>% summarise(sum(UnitsAttempted))
+
+#mean(studentdat$`sum(UnitsAttempted)`)
+
+#names(studentdat)[2] <- "transunitsattemp"
+
+#if include students that don't take T eligible courses
+#%>% mutate(tflag  = ifelse(CreditFlag=="T", 1, 0)) %>% mutate(tunits = tflag * `sum(UnitsAttempted)`) %>% group_by(derkey1) %>% summarise(sum(tunits))
+
+#range(studentdat$`sum(UnitsAttempted)`)
+
+#make sure the totals match
+#colSums(studentdat[2])
+
+
+# to merge studentdat
+```
+
+
+```{r}
+#aggregate transfer type
+##to merge UC_CSUearned
+
+#courses1617 %>% group_by(TransferStatus) %>% summarise(sum(UnitsEarned))
+
+# getting UC vs CSU conditioning on T
+UC_CSUearned <- cc1718full %>%  filter(CreditFlag=="T" & UnitsAttempted >= 1) %>%
+    mutate(UCflag  = ifelse(TransferStatus=="A" & UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(CSUflag  = ifelse(UCflag==1 | TransferStatus == "B" & UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(UCunits = UCflag * UnitsEarned, CSUunits = CSUflag * UnitsEarned) %>% 
+  group_by(inter_segment_key) %>% summarise(sum(UCunits), sum(CSUunits))
+
+summary(UC_CSUearned)
+
+# Not conditioning on attempting any transferable unit
+
+UC_CSUearned2 <- cc1718full %>%
+    mutate(UCflag  = ifelse(TransferStatus=="A" & UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(CSUflag  = ifelse(UCflag==1 | TransferStatus == "B" & UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(UCunits = UCflag * UnitsEarned, CSUunits = CSUflag * UnitsEarned) %>% 
+  group_by(inter_segment_key) %>% summarise(UC_units=sum(UCunits), CSU_Units = sum(CSUunits))
+# getting UC vs CSU NOT conditioning on T
+
+summary(UC_CSUearned2)
+
+UC_CSUearned <- cc1718full  %>%
+    mutate(UCflag  = ifelse(TransferStatus=="A" &  UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(CSUflag  = ifelse(UCflag==1 | TransferStatus == "B"  & UnitsEarned <= UnitsAttempted, 1, 0)) %>% mutate(UCunits = UCflag * UnitsEarned, CSUunits = CSUflag * UnitsEarned) %>% 
+  group_by(inter_segment_key) %>% summarise(sum(UCunits), sum(CSUunits))
+
+summary(UC_CSUearned)
+
+#this creates indicators for how many and if UC/CSU attempted
+UC_CSUindicator <- cc1718full %>% mutate(UCCSUattempt = ifelse(TransferStatus=="A", 1, 0), CSUattempt = ifelse(TransferStatus=="B", 1, 0), nottransfer =ifelse(TransferStatus=="C", 1, 0), basicskills = ifelse(CreditFlag=="S", 1, 0)) %>% group_by(inter_segment_key) %>% summarise(UCSCUattempt1 = sum(UCCSUattempt), CSUattempt1=sum(CSUattempt), notransfer1 = sum(nottransfer), basicskills1=sum(basicskills)) %>% mutate(UCCSUattemptflag = ifelse(UCSCUattempt1>0, 1, 0), CSUattempt1flag = ifelse(CSUattempt1>0, 1, 0), nottransferattemptflag = ifelse(notransfer1 >0, 1, 0), basicskillsindic = ifelse(basicskills1 >0, 1, 0))
+
+View(UC_CSUindicator)
+
+summary(UC_CSUindicator)
+
+
+
+mean(UC_CSUearned$`sum(CSUunits)`)
+
+#to merge UC_CSUearned
+
+```
+
+```{r career credtits}
+#493012
+cc1718full$TopCode <- as.character(cc1718full$TopCode)
+
+table(cc1718full$TopCode)
+
+## Careerearned <- cc1718full %>%  filter(CreditFlag=="T" & UnitsAttempted >= 1) %>%
+#    mutate(cflag  = ifelse(TopCode==493012 & UnitsEarned <= UnitsMax, 1, 0))%>% 
+#  group_by(inter_segment_key, cflag) %>% summarise(sum(UnitsEarned)) %>% mutate(cunits =  #cflag * `sum(UnitsEarned)`) %>% group_by(derkey1) %>% summarise(sum(cunits))
+
+sum(duplicated(Careerearned$derkey1)==T)
+
+range(Careerearned$`sum(cunits)`)
+
+
+Careerearned <- cc1718full %>%
+    mutate(cflag  = ifelse(TopCode==493012 & UnitsEarned <= UnitsAttempted, 1, 0))%>% 
+  group_by(inter_segment_key) %>% summarise(TOP_493012= sum(UnitsEarned*cflag)) 
+
+
+# filter by attempted (among)
+Careerearned <- cc1718full %>% filter(CreditFlag=="T") %>%
+    mutate(cflag  = ifelse(TopCode==493012 & UnitsEarned <= UnitsAttempted, 1, 0))%>% 
+  group_by(inter_segment_key) %>% summarise(sum(UnitsEarned*cflag)) 
+
+#%>% mutate(cunits = cflag * `sum(UnitsEarned)`) %>% group_by(derkey1) %>% summarise(sum(cunits))
+
+
+#to merge CareerEarned#
+
+summary(Careerearned)
+
+
+```
+
+```{r failed courses}
+
+# Get just students who attempted a transfer eligible course
+Transferdat <- cc1718full %>% filter(CreditFlag == "T")
+nrow(Transferdat)
+
+failT <- Transferdat %>% mutate(fail = ifelse(Grade == "F"|Grade=="NC/NP", 1, 0)) %>% group_by(inter_segment_key) %>% summarise(sum(fail))
+
+summary(failT)
+
+# redo it with students whether course transfer elegible or not
+failT2 <- cc1718full %>% mutate(fail = ifelse(Grade == "F"|Grade=="NC/NP", 1, 0)) %>% group_by(inter_segment_key) %>% summarise(total_fail=sum(fail))
+
+summary(failT2)
+sum(failT$`sum(fail)`, na.rm = T)
+
+mean(failT$`sum(fail)`)
+colSums(failT[2])
+
+sum(duplicated(failT$derkey1)==T)
+
+#to merge, failT2
+```
+
+```{r 493013 499900}
+# top earned not selecting on attempts
+topearned <- cc1718full %>%
+    mutate(cflag  = ifelse(TopCode==493013 & UnitsEarned <= UnitsAttempted|TopCode==499900 & UnitsEarned <= UnitsAttempted, 1, 0))%>% 
+  group_by(inter_segment_key) %>% 
+  summarise(successcredits = sum(UnitsEarned*cflag)) 
+summary(Careerearned)
+
+## DONT USE FOR NOW ###
+topearned <- cc1718full %>% filter(CreditFlag=="T" & UnitsAttempted >= 1) %>%
+    mutate(topflag  = ifelse(TopCode==493013 & UnitsEarned <= UnitsAttempted| TopCode == 499900 & UnitsEarned <= UnitsAttempted, 1, 0))%>% 
+  group_by(inter_segment_key, topflag) %>% summarise(sum(UnitsEarned)) %>% mutate(topunits = topflag * `sum(UnitsEarned)`) %>% group_by(inter_segment_key) %>% summarise(sum(topunits))
+
+summary(topearned)
+
+# top earned seperate
+topearned <- cc1718full %>%
+    mutate(topflag  = ifelse(TopCode==493013 & UnitsEarned <= UnitsAttempted| TopCode == 499900 & UnitsEarned <= UnitsAttempted, 1, 0))%>% 
+  group_by(inter_segment_key, topflag) %>% summarise(sum(UnitsEarned)) %>% mutate(topunits = topflag * `sum(UnitsEarned)`) %>% group_by(inter_segment_key) %>% summarise(sum(topunits))
+
+summary(topearned)
+
+
+
+range(topearned$`sum(topunits)`, na.rm = T)
+
+#merge topearned
+
+
+```
+
+```{r}
+#transfer grades
+
+ccgpa <- cc1718full %>% 
+   #mutate(`UnitsEarned*` = ifelse(UnitsEarned < 88, UnitsEarned, 0)) %>%
+  filter(UnitsEarned <= UnitsAttempted ) %>% 
+  mutate(tflag  = ifelse(CreditFlag=="T" & UnitsAttempted > 0, 1, 0)) %>%
+  group_by(inter_segment_key) %>% summarise(gpa = sum(gpaval*UnitsEarned)/sum(UnitsAttempted))
+
+ccgpa_transferatt <- cc1718full %>% 
+   #mutate(`UnitsEarned*` = ifelse(UnitsEarned < 88, UnitsEarned, 0)) %>%
+  filter(UnitsEarned <= UnitsAttempted ) %>% 
+  mutate(tflag  = ifelse(CreditFlag=="T" & UnitsAttempted > 0, 1, 0)) %>%
+  filter(tflag==1) %>%
+  group_by(inter_segment_key) %>% summarise(gpa = sum(gpaval*UnitsEarned)/sum(UnitsAttempted))
+
+ccgpa <- cc1718full %>% 
+  filter(CreditFlag == "T", UnitsEarned <= UnitsAttempted ) %>% 
+  group_by(inter_segment_key) %>% summarise(gpa = sum(gpaval*UnitsEarned)/sum(UnitsAttempted))
+
+summary(ccgpa)
+#ccgpa <- courses1617 %>% group_by(derkey1) %>% summarise(mean(gpaval, na.rm=T))
+
+#mean(ccgpa$`mean(gpaval, na.rm = T)`, na.rm=T)
+
+#merge ccgpa & ccgpa_transferatt
+
+
+```
+```
