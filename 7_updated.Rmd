@@ -213,12 +213,19 @@ library(tidyverse)
 cc1618_attend_agg <- cc1618_attend %>%
   filter(SSID != "(15007 rows affected)") %>%
   group_by(SSID, YearCode) %>%
-  summarize(tot_attend = sum(AttendedDays),
-            tot_expect_attend = sum(ExpectedAttendanceDays),
+  summarize(tot_attend = sum(AttendedDays, na.rm = T),
+            tot_expect_attend = sum(ExpectedAttendanceDays, na.rm = T),
             attendrate = tot_attend/tot_expect_attend,
-            suspendtot = sum(SuspendedDays),
-            suspend_rate = sum(SuspendedDays)/sum(tot_expect_attend),
-            chron_abs = if_else(attendrate <= .9, 1, 0))
+            suspendtot = sum(SuspendedDays, na.rm = T),
+            suspend_rate = sum(SuspendedDays, na.rm = T)/sum(tot_expect_attend, na.rm = T),
+            chron_abs = if_else(attendrate <= .9, 1, 0)) %>%
+  mutate()
+
+glimpse(cc1618_attend_agg)
+
+```
+
+```{r}
 
 GFSFschools <- read_excel("C:/Users/katzd/Desktop/Rprojects/GFSF/GFSFschools.xlsx")
 GFSFschools <- GFSFschools[-c(11, 22), ] %>%
@@ -231,59 +238,159 @@ names(GFSFschools2)[1:4] <- c("CDS",                         "High School",     
 
 GFSFschools2 <- GFSFschools2 %>% 
   select(CDS:FFF)
+```
 
-# get just first CDS from attend
+# get just first CDS from attend, enroll, and courses
+
+```{r}
 
 CDS_attend <- cc1618_attend %>%
-  filter(YearCode=="2016-2017") %>% 
-  full_join(., GFSFschools2, by = "CDS") %>%
-  mutate(GFSF_FFF_attend = case_when(
-  FFF==0 ~"0",
-  FFF==1 ~ "1")) %>%
-  group_by(SSID) %>%
-  mutate(FFF_any = if_else(any(GFSF_FFF_attend==1)|any(GFSF_FFF_attend==2), 1, 0)) %>%
-  filter(FFF_any == 1 & GFSF_FFF_attend == 1 | FFF_any == 0 & GFSF_FFF_attend ==0|is.na(FFF_any)&is.na(GFSF_FFF_attend)) %>%
-  mutate(id = row_number()) %>%
-  filter(id==1) %>%
+  left_join(., GFSFschools2, by = "CDS") %>%
+  group_by(SSID, YearCode) %>%
+  mutate(id = case_when(IsExempt=="Y" ~ 999,
+                        TRUE ~ as.double(row_number()))) %>%
+  #arrange(id) %>%
+  #mutate(id = row_number()) 
   ungroup() %>%
-  select(SSID, CDS, FFF) %>%
-  rename("attend_CDS" = CDS, "attend_FFF"=FFF)
-
-n_distinct(cc1618_attend$SSID)
-n_distinct(CDS_attend$SSID)
-
-CDS_attend[CDS_attend$SSID %in% cc1618_attend$SSID==F,  ]
-
-summary(cc1618_attend_agg[cc1618_attend_agg$YearCode=="2017-2018", ])
-
-```
-```{r}
-# Get enrollment GFSF
-
-CDS_enroll <- cc1618_grade %>%  
-  filter(YearCode=="2016-2017" & GradeCode=="09") %>%
-  full_join(., GFSFschools2, by = "CDS") %>%
-  mutate(GFSF_FFF_enroll = case_when(
-  FFF==0 ~"0",
+  mutate(GFSF_FFF_attend = case_when(FFF==0 ~"0",
   FFF==1 ~ "1")) %>%
   group_by(SSID) %>%
+  mutate(FFF_any_attend = if_else(any(GFSF_FFF_attend==1), 1, 0)) %>%
+  ungroup() %>%
+  #filter(FFF_any == 1| FFF_any == 0|is.na(FFF_any)) %>%
+  #mutate(id = row_number()) %>%
+  #filter(id==1) %>%
+  select(SSID, CDS, IsExempt, YearCode, GFSF_FFF_attend, FFF_any_attend, id) %>%
+  rename("attend_CDS" = CDS, "any_attend_FFF"=FFF_any_attend) %>%
+  group_by(YearCode, SSID) %>%
+  filter(case_when(all(is.na(GFSF_FFF_attend))~ id==min(id),
+                   all(GFSF_FFF_attend==1) ~ id==min(id),
+                   all(GFSF_FFF_attend==0) ~ id==min(id),
+                   TRUE ~  id==min(id)))
+
+
+#
+#CDS_attend1718 <- cc1618_attend %>%
+#  filter(YearCode=="2017-2018") %>% 
+#  full_join(., GFSFschools2, by = "CDS") %>%
+#  mutate(GFSF_FFF_attend = case_when(
+#  FFF==0 ~"0",
+#  FFF==1 ~ "1")) %>%
+#  group_by(SSID) %>%
+#  mutate(FFF_any = if_else(any(GFSF_FFF_attend==1)|any(GFSF_FFF_attend==2), 1, 0)) %>%
+#  filter(FFF_any == 1 & GFSF_FFF_attend == 1 | FFF_any == 0 & GFSF_FFF_attend #==0|is.na(FFF_any)&is.na(GFSF_FFF_attend)) %>%
+#  mutate(id = row_number()) %>%
+#  filter(id==1) %>%
+#  ungroup() %>%
+#  select(SSID, CDS, FFF) %>%
+#  rename("attend_CDS" = CDS, "attend_FFF"=FFF) 
+
+# n_distinct(cc1618_attend$SSID)
+# n_distinct(CDS_attend$SSID)
+# 
+# CDS_attend[CDS_attend$SSID %in% cc1618_attend$SSID==F,  ]
+# 
+# summary(cc1618_attend_agg[cc1618_attend_agg$YearCode=="2017-2018", ])
+
+
+# Get enrollment GFSF ##
+
+##CDS_enroll_treat <- cc1618_grade %>%  
+#  filter(YearCode=="2016-2017" & GradeCode=="09") %>%
+#  left_join(., GFSFschools2, by = "CDS") %>%
+#  mutate(GFSF_FFF_enroll = case_when(
+#  FFF==0 ~"0",
+#  FFF==1 ~ "1")) %>%
+#  group_by(SSID) %>%
+#  mutate(FFF_any = if_else(any(GFSF_FFF_enroll==1), 1, 0)) %>%
+#  filter(FFF_any == 1 & GFSF_FFF_enroll == 1 | FFF_any == 0 & GFSF_FFF_enroll #==0|is.na(FFF_any)&is.na(GFSF_FFF_enroll)) %>%
+#  mutate(id = row_number()) %>%
+#  filter(id==1) %>%
+#  ungroup() %>%
+#  select(SSID, CDS, FFF) %>%
+#  rename("enroll_CDS" = CDS, "enroll_FFF"=FFF)
+
+CDS_enroll <- cc1618_grade %>%
+  group_by(SSID, YearCode) %>%
+  left_join(., GFSFschools2, by = "CDS") %>%
+  mutate(GFSF_FFF_enroll = case_when(FFF==0 ~"0",
+  FFF==1 ~ "1")) %>%
   mutate(FFF_any = if_else(any(GFSF_FFF_enroll==1), 1, 0)) %>%
-  filter(FFF_any == 1 & GFSF_FFF_enroll == 1 | FFF_any == 0 & GFSF_FFF_enroll ==0|is.na(FFF_any)&is.na(GFSF_FFF_enroll)) %>%
-  mutate(id = row_number()) %>%
-  filter(id==1) %>%
+  filter(FFF_any==1 & GFSF_FFF_enroll==1|FFF_any_enroll==0 & GFSF_FFF_enroll==0|is.na(GFSF_FFF_enroll)& is.na(FFF_any_enroll)) %>%
   ungroup() %>%
-  select(SSID, CDS, FFF) %>%
-  rename("enroll_CDS" = CDS, "enroll_FFF"=FFF)
+  #filter(FFF_any == 1| FFF_any == 0|is.na(FFF_any)) %>%
+  #mutate(id = row_number()) %>%
+  #filter(id==1) %>%
+  select(SSID, CDS, YearCode, GFSF_FFF_enroll, FFF_any) %>%
+  rename("enroll_CDS" = CDS, "enroll_FFF"=FFF_any) %>%
+  group_by(SSID) %>%
+  mutate(enroll_FFF=ifelse(any(enroll_FFF==1), 1, 0)) %>%
+         
+  ungroup() %>%
+  group_by(YearCode, SSID) %>%
+  mutate(id = row_number()) %>%
+  filter(case_when(all(is.na(GFSF_FFF_enroll))~id==1,
+                   all(GFSF_FFF_enroll==1) ~ id ==1,
+                   all(GFSF_FFF_enroll==0) ~ id ==1,
+                   GFSF_FFF_enroll ==1 & GFSF_FFF_enroll==0 ~ GFSF_FFF_enroll==1 & min(id)))
+
+### Courses, original attempt. Code kept for record.
+## CDS_courses1<- cc1618_courses %>%
+#  filter(YearCode=="2016-2017") %>%
+#  full_join(., GFSFschools2, by = "CDS") %>%
+#  mutate(GFSF_FFF_courses = case_when(
+#    FFF==0 ~ 0,
+#    FFF==1 ~ 1  )) %>%
+#  group_by(SSID) %>%
+#  mutate(FFF_any = if_else(any(GFSF_FFF_courses==1), 1, 0)) %>%
+#  filter(FFF_any == 1 & GFSF_FFF_courses == 1 | FFF_any == 0 & GFSF_FFF_courses #==0|is.na(FFF_any)&is.na(GFSF_FFF_courses)) %>%
+#  mutate(id = row_number()) %>%
+#  filter(id==1) %>%
+#  ungroup() %>%
+#  select(SSID, CDS, FFF) %>%
+#  rename("courses_CDS" = CDS, "courses_FFF"=FFF) %>%
+#  mutate(courses_CDS=as.character(courses_CDS))
+
+CDS_courses <- cc1618_courses %>%
+  group_by(SSID, YearCode) %>%
+  left_join(., GFSFschools2, by = "CDS") %>%
+  mutate(GFSF_FFF_courses = case_when(FFF==0 ~"0",
+  FFF==1 ~ "1")) %>%
+  mutate(FFF_any = if_else(any(GFSF_FFF_courses==1), 1, 0)) %>%
+  filter(FFF_any==1 & GFSF_FFF_courses==1|FFF_any==0 & GFSF_FFF_courses==0|is.na(GFSF_FFF_courses)& is.na(FFF_any)) %>%
+  ungroup() %>%
+  #filter(FFF_any == 1| FFF_any == 0|is.na(FFF_any)) %>%
+  #mutate(id = row_number()) %>%
+  #filter(id==1) %>%
+  select(SSID, CDS, YearCode, GFSF_FFF_courses, FFF_any) %>%
+  rename("courses_CDS" = CDS, "courses_FFF"=FFF_any) %>%
+  group_by(SSID) %>%
+  mutate(courses_FFF=ifelse(any(courses_FFF==1), 1, 0)) %>%
+         
+  ungroup() %>%
+  group_by(YearCode, SSID) %>%
+  mutate(id = row_number()) %>%
+  filter(case_when(all(is.na(GFSF_FFF_courses))~id==1,
+                   all(GFSF_FFF_courses==1) ~ id ==1,
+                   all(GFSF_FFF_courses==0) ~ id ==1,
+                   GFSF_FFF_courses ==1 & GFSF_FFF_courses==0 ~ GFSF_FFF_courses==1 & min(id)))
+
 
 
 
   
-n_distinct(cc1618_grade$SSID)
+n_distinct(CDS_courses$SSID)
+n_distinct(cc1618_courses$SSID)
+n_distinct(CDS_attend$SSID)
+n_distinct(cc1618_attend$SSID)
 n_distinct(CDS_enroll$SSID)
 
-CDS_enroll[CDS_enroll$SSID %in% cc1618_grade$SSID==F,  ]
+anti_join(CDS_attend, cc1618_attend, by = "SSID")
+anti_join(CDS_enroll, cc1618_grade, by = "SSID")
+anti_join(CDS_courses, cc1618_courses, by = "SSID")
+anti_join(cc1618_grade, CDS_enroll,  by = "SSID")
+anti_join(cc1618_attend, CDS_attend,  by = "SSID")
 
-exp()
 
 ```
 
@@ -310,9 +417,11 @@ filedat_units <- cc1618_courses %>%
      
 #if_else(CreditAttempted==5|CreditAttempted==10|CreditAttempted==2.5, CreditEarned/10, CreditEarned),
      UnitsAttempted = case_when(CreditAttempted >= 1 & CourseTerm != "FY"| 
-                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditAttempted/10),
+                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditAttempted/10,
+                             TRUE ~ CreditAttempted),
 UnitsEarned = case_when(CreditAttempted >= 1 & CourseTerm != "FY"| 
-                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditEarned/10),
+                             CreditAttempted > 1 & CourseTerm == "FY" ~ CreditEarned/10,
+                             TRUE ~ CreditEarned),
 #if_else(CreditAttempted==5|CreditAttempted==10|CreditAttempted==2.5, CreditAttempted/10, CreditAttempted),
      GPA_points1 = as.numeric(GPA_points1),
      GPA_points1 = replace_na(GPA_points1, 0),
@@ -348,6 +457,7 @@ AVID_UNIT_attempt=case_when(str_detect(CourseTitle,"^Avid")|
   group_by(SSID) %>%
   mutate(tot_distinct_schools=n_distinct(SSID))
 
+# this joins the indicators with the schools and SSID
 indicat_SSID <- cc1618_courses %>%
   #filter(YearCode=="2016-2017") %>%
   distinct(., SSID, CDS, YearCode) %>%
@@ -357,7 +467,10 @@ indicat_SSID <- cc1618_courses %>%
   ungroup() %>%
   pivot_wider(values_from = CDS, names_from = group_id)
 
-write_sav(indicat_SSID, "just_school.sav")
+indicats <- indicat_SSID
+names(indicats) <- make.names(names(indicats))
+library(haven)
+write_sav(indicats, "just_school.sav")
 
 
   
@@ -367,29 +480,42 @@ write_sav(indicat_SSID, "just_school.sav")
 ###get credit earned basically this puts together the whole file.
 indicators<- filedat_units %>%
   group_by(SSID, YearCode) %>% 
-  summarize(
-            GFSF_courses_taken = sum(GFSF_cred, na.rm = T),
-            AVID_course_taken = sum(AVID_cred, na.rm = T),
-    #`credearnraw*` = sum(CreditEarned),
+  summarize(`cred_attempt_carn*` = sum(UnitsAttempted),
             `cred_earn_carn*` = sum(UnitsEarned),
-            `credit_attempt_carn*` = sum(UnitsAttempted),
             `ag_cred_earn_carn*` = sum(`ag*`*UnitsEarned),
             `ag_courses*` = sum(`ag_cred_earn_carn*`, na.rm = T),
             #`ag_cred_carn_earn*` = sum(`ag_cred_earn*`/5),
             `totfail*` = sum(`fail*`),
             `GPA*` = sum(GPA_points * UnitsEarned, na.rm=T)/sum(UnitsAttempted, na.rm = T), 
             `aggpa**` = sum(GPA_points * UnitsEarned * `ag*`)/(sum(UnitsAttempted*`ag*`)),
+            GFSF_courses_taken = sum(GFSF_cred, na.rm = T),
+            AVID_course_taken = sum(AVID_cred, na.rm = T),
             GFSF_units_attempt = sum(GFSF_UNIT_attempt, na.rm=T),
-            GFSF_Units_earn = sum(GFSF_UNIT_earn, na.rm=T),
+            GFSF_units_earn = sum(GFSF_UNIT_earn, na.rm=T),
             AVID_units_attempt = sum(AVID_UNIT_attempt, na.rm=T),
             AVID_Units_earn = sum(AVID_UNIT_earn, na.rm=T),
             GFSF_GPA = sum(GPA_points*GFSF_UNIT_earn,  na.rm=T)/sum(GFSF_UNIT_attempt, na.rm=T),
             AVID_GPA = sum(GPA_points*AVID_UNIT_earn,  na.rm=T)/sum(AVID_UNIT_attempt,  na.rm=T)) %>%
-  mutate(`aggpa*`=if_else(is.nan(`aggpa**`), 0, `aggpa**`)) %>%
+  mutate(`aggpa*`=if_else(is.nan(`aggpa**`), 0, `aggpa**`),
+         cred_attempt_carn_div2= case_when(SSID=="6142357304" ~ `cred_attempt_carn*`/2,
+                                        SSID!="6142357304" ~ `cred_attempt_carn*`),
+         cred_earn_carn_div2= case_when(SSID=="6142357304" ~ `cred_earn_carn*`/2,
+                                        SSID!="6142357304" ~ `cred_earn_carn*`),
+         GFSF_courses_taken_div2 = ifelse(SSID=="6142357304", GFSF_courses_taken/2, GFSF_courses_taken),
+         GFSF_units_attempt_div2 = ifelse(SSID=="6142357304", GFSF_units_attempt/2, GFSF_units_attempt),
+         GFSF_units_earn_div2 = ifelse(SSID=="6142357304", GFSF_units_earn/2, GFSF_units_earn),
+         ag_cred_earn_carn_div2 = ifelse(SSID=="6142357304",  `ag_cred_earn_carn*`/2,  `ag_cred_earn_carn*`),
+         ag_courses_div2 = ifelse(SSID=="6142357304",  `ag_courses*`/2,  `ag_courses*`)) %>%
   ungroup() %>%
   group_by(SSID) %>%
   mutate(total_ag_cred_earn_carn =sum(`ag_cred_earn_carn*`, na.rm=T),
-         total_ag_course = sum(`ag_courses*`, na.rm = T))
+         total_ag_course = sum(`ag_courses*`, na.rm = T),
+         total_ag_cred_earn_carn_div2 = sum(ag_cred_earn_carn_div2),
+         total_ag_course_div2 = sum(ag_courses_div2),
+         total_credit_attemt_carn = sum(`cred_attempt_carn*`),
+         total_credit_attempt_carn_div2 = sum(cred_attempt_carn_div2),
+         total_cred_earn_carn = sum(`cred_earn_carn*`),
+         total_cred_earn_carn_div2 = sum(cred_earn_carn_div2))
 
 indicators_two <- filedat_units %>%
   group_by(SSID) %>%
@@ -404,24 +530,26 @@ indicators <- left_join(indicators, indicators_two, by="SSID")
   #ungroup() %>%
 
 
-#GFSFschools <- bind_rows(GFSFschools, GFSFschools2)
 
 
-CDS_courses<- cc1618_courses %>%
-  filter(YearCode=="2016-2017") %>%
-  full_join(., GFSFschools2, by = "CDS") %>%
-  mutate(GFSF_FFF_courses = case_when(
-    FFF==0 ~"0",
-    FFF==1 ~ "1"  )) %>%
-  group_by(SSID) %>%
-  mutate(FFF_any = if_else(any(GFSF_FFF_courses==1), 1, 0)) %>%
-  filter(FFF_any == 1 & GFSF_FFF_courses == 1 | FFF_any == 0 & GFSF_FFF_courses ==0|is.na(FFF_any)&is.na(GFSF_FFF_courses)) %>%
-  mutate(id = row_number()) %>%
-  filter(id==1) %>%
-  ungroup() %>%
-  select(SSID, CDS, FFF) %>%
-  rename("courses_CDS" = CDS, "courses_FFF"=FFF)
-  
+table(CDS_courses$courses_CDS, CDS_courses$courses_FFF)
+
+```
+
+```{r}
+#install.packages("gmodels")
+#library(gmodels)  
+#unitss <- CrossTable(filedat_units$CourseTerm, filedat_units$CreditAttempted)
+#
+#print(unitss, format = "SPSS", cell.layout = FALSE, row.labels = TRUE)
+#
+#units_attempt_quart <- as.data.frame(unitss$t) %>%
+#  filter(str_detect(x, "^Z"))
+#names(units_attempt_quart) <- c("term", "credits_attempted", "num_occurences")
+#
+#write.csv(units_attempt_quart, "z_occurences.csv")
+
+
 ##n_distinct(cc1618_courses$SSID)
 #
 #n_distinct(CDS_courses$SSID)
@@ -434,15 +562,18 @@ CDS_courses<- cc1618_courses %>%
 
 ```{r}
 indicators2 <- left_join(cc1618_g910_d, indicators, by=c("SSID", "YearCode")) %>%
-  group_by(SSID) %>%
   left_join(., cc1618_attend_agg, by = c("SSID", "YearCode")) %>%
+  group_by(SSID) %>%
+  mutate(total_expect_attend=sum(tot_expect_attend),
+         total_attend = sum(tot_attend),
+         total_attend_rate = total_attend/total_expect_attend) %>%
   group_by(SSID, YearCode) %>%
            mutate( `ontrack1*` = ifelse(`totfail*` <= 1 & `cred_earn_carn*` >=5, 1, 0),
          `ontrack2*` = if_else(sum(attendrate) >= .95 & sum(suspendtot) ==0 & `totfail*` ==0, 1,0)) %>%
   ungroup() %>%
   group_by(SSID) %>%
-  mutate(`total_ontrack1*` = ifelse(`totfail*` <= 2 & `cred_earn_carn*` >=10, 1, 0),
-         `total_ontrack2*` = if_else(sum(attendrate/n()) >= .95 & sum(suspendtot) ==0 & `totfail*` ==0, 1, 0)) %>%
+  mutate(`total_ontrack1*` = ifelse(`totfail*` <= 2 & sum(`cred_earn_carn*`) >=10, 1, 0),
+         `total_ontrack2*` = if_else(total_attend_rate >= .95 & sum(suspendtot) ==0 & `totfail*` ==0, 1, 0)) %>%
   ungroup() %>%
   group_by(SSID, YearCode) %>%
   mutate(gradeenroll = if_else(GradeCode=="09"|GradeCode=="10", 1, 0)) %>%
@@ -450,18 +581,21 @@ indicators2 <- left_join(cc1618_g910_d, indicators, by=c("SSID", "YearCode")) %>
   group_by(SSID) %>%
   mutate(grade_both = sum(gradeenroll),
          only_1_grade = if_else(grade_both < 2, 1, 0)) %>%
+  ungroup() %>%
   dplyr::select(-gradeenroll, -grade_both) %>%
-  left_join(., CDS_attend, by=c("SSID")) %>%
-  left_join(., CDS_courses, by = "SSID") %>%
-  left_join(., CDS_enroll, by ="SSID") %>%
+  left_join(., CDS_attend, by= c("SSID", "YearCode")) %>%
+  left_join(., CDS_courses, by = c("SSID", "YearCode")) %>%
+  left_join(., CDS_enroll, by =c("SSID", "YearCode")) %>%
   #left_join(., indicat_SSID, by=c("SSID")) %>%
-  mutate(treat = if_else(courses_FFF==1|enroll_FFF==1|attend_FFF==1, 1, 0))
+  mutate(any_treat = if_else(courses_FFF==1|enroll_FFF==1|GFSF_FFF_attend==1, 1, 0),
+         treat = if_else(GFSF_FFF_attend==1, 1, 0))
 
 names(indicators2)
+names(indicators3$GPA.)
 
 indicators3 <- indicators2 %>%
   select(-group_id, -eval_school) %>%
-  select(SSID, courses_CDS, enroll_CDS, attend_CDS, CDS, treat, InterSegmentKey:treat ) %>%
+  select(SSID, courses_CDS, enroll_CDS, attend_CDS, treat, InterSegmentKey:any_treat) %>%
   rename("CDS_courses" = courses_CDS,
          "CDS_enroll" = enroll_CDS, 
          "CDS_attend" = attend_CDS,
@@ -472,15 +606,44 @@ indicators3 <- indicators2 %>%
          "suspend_year" = suspendtot) %>%
   group_by(SSID) %>%
   mutate(total_fail=sum(fail)) %>%
-  select(-CDS)
+  select(-CDS, -subcds) %>%
+  select(SSID:CDS_attend, IsExempt, treat, any_treat, any_attend_FFF, InterSegmentKey:fail, total_fail, `GPA*`:only_1_grade) %>%
+  mutate(treat=case_when(
+    any(treat==1 & YearCode=="2016-2017") ~ "1",
+    any(treat==0 & YearCode=="2016-2017") ~ "0"
+  ))
 
 names(indicators3) <- make.names(names(indicators3))
 
 
-write.csv(indicators3, "student_level_variables_gfsf15.csv")
-write_sav(indicators3, "student_level_variables_gfsf15.sav")
+
+write.csv(indicators3, "student_level_variables_gfsf18.csv")
+write_sav(indicators3, "student_level_variables_gfsf18.sav")
+
+```
+
+```{r}
+
+ind4 <- indicators3 %>%
+  filter(YearCode=="2016-2017" & treat==1|
+        YearCode=="2016-2017" & treat==0)%>%
+  group_by(CDS_attend) %>%
+  count()
+
+names(ind4)[1] <- "CDS"
+full_join(ind4, GFSFschools2, by = "CDS")
 
 
+table(ind4$CDS_attend, ind4$treat)
+
+n_distinct(ind4$CDS_attend)
+
+library(lme4)
+summary(lmer(data=indicators3,  GPA. ~ as.character(treat) + (1|CDS_attend)))
+
+```
+
+```{r}
 fails <- indicators3 %>%
   group_by(SSID) %>%
   summarise(total_fail=sum(fail, na.rm=T))
@@ -517,6 +680,13 @@ total_gfsf <- indicators3 %>%
   filter(YearCode=="2016-2017") %>%
   group_by(CDS_courses) %>%
   summarise(total_GFSF = sum(GFSF_courses_taken))
+```
+
+```{r}
+indicators3 %>%
+filter(CDS_courses=="19757131937697") %>% 
+  arrange(desc(treat)) %>%
+  filter(SSID == "8211821736"	)
 ```
 
 ```{r}
